@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Generador de Reporte Técnico — Offline (Mejorado)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="manifest" href="manifest.json">
+        <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+        </script>
+
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+  <style>html,body,#root{height:100%} body{background:#f1f5f9}</style>
+</head>
+<body class="antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel">
+  const { useState, useEffect, useRef } = React;
+  const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
+
+  /* ------------------ Signature modal component ------------------ */
+  function SignatureModal({ open, title, onSave, onClose, strokeWidth=2.5 }){
+    const canvasRef = useRef(null);
+    const [drawing, setDrawing] = useState(false);
+
+    useEffect(()=>{
+        if(!open) return;
+        const canvas = canvasRef.current;
+        const w = 800, h = 300; // tamaño base en px
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.width = '100%';
+        canvas.style.height = (h / (w / canvas.offsetWidth || 600)) + 'px';
+
+        const ctx = canvas.getContext('2d');
+        ctx.lineWidth = strokeWidth;
+        ctx.strokeStyle = '#111';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.beginPath();
+    },[open, strokeWidth]);
+
+    const pos = (evt) => {
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+
+        if (evt.touches && evt.touches[0]) {
+            return {
+                x: (evt.touches[0].clientX - rect.left) * scaleX,
+                y: (evt.touches[0].clientY - rect.top) * scaleY
+            };
+        }
+
+        return {
+            x: (evt.clientX - rect.left) * scaleX,
+            y: (evt.clientY - rect.top) * scaleY
+        };
+    };
+    const start = (e) => {
+        e.preventDefault();
+        setDrawing(true);
+        const {x,y}=pos(e);
+        const ctx=canvasRef.current.getContext('2d');
+        ctx.beginPath();
+        ctx.moveTo(x,y);
+    }; 
+
+    const move = (e) => {
+        if(!drawing) return;
+        e.preventDefault();
+        const {x,y}=pos(e);
+        const ctx=canvasRef.current.getContext('2d');
+        ctx.lineTo(x,y);
+        ctx.stroke();
+    };
+
+    const end = (e) => {
+        if(!drawing) return;
+        e?.preventDefault();
+        setDrawing(false);
+        const ctx=canvasRef.current.getContext('2d');
+        ctx.closePath();
+    };
+
+    const clearPad = ()=>{
+        const ctx=canvasRef.current.getContext('2d');
+        ctx.clearRect(0,0,canvasRef.current.width, canvasRef.current.height);
+        ctx.beginPath();
+    };
+
+    const save = ()=>{
+        const dataURL = canvasRef.current.toDataURL('image/png');
+        onSave(dataURL);
+        onClose();
+    };
+
+    if(!open) return null;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-4" onClick={(e)=>e.stopPropagation()}>
+                <h3 className="text-lg font-semibold mb-2">{title||'Dibuje su firma'}</h3>
+                <div className="border rounded overflow-hidden">
+                    <canvas ref={canvasRef} className="w-full h-40 touch-none"
+                        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+                        onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
+            </div>
+            <div className="mt-3 flex gap-2 justify-end">
+                <button onClick={clearPad} className="px-3 py-2 rounded bg-red-500 text-white">Borrar trazo</button>
+                 <button onClick={save} className="px-3 py-2 rounded bg-blue-600 text-white">Guardar firma</button>
+                <button onClick={onClose} className="px-3 py-2 rounded bg-slate-200">Cerrar</button>
+            </div>
+        </div>
+    </div>
+);
+}
+
+  /* ------------------ App ------------------ */
+  function App(){
+    // Form state
+    const [form, setForm] = useState({
+      empresa:'', direccion:'', contacto:'', fecha:'',
+      marca:'', modelo:'', serie:'', contadorBN:'', contadorColor:'', servicio:'', falla:'',
+      funcion:'', repuestos:'', observacion:''
+    });
+
+    // Template bytes
+    const [templateBytes, setTemplateBytes] = useState(null);
+    const [templName, setTemplName] = useState('');
+
+    // Signatures
+    const [firmaCli, setFirmaCli] = useState(null);
+    const [firmaIng, setFirmaIng] = useState(null);
+    const [openCli, setOpenCli] = useState(false);
+    const [openIng, setOpenIng] = useState(false);
+
+    const [extraImg, setExtraImg] = useState(null);
+
+    const onLoadExtraImg = (file) => {
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setExtraImg(e.target.result); // base64 de la imagen
+        setMsg("Imagen adicional cargada ✔️");
+      };
+      reader.readAsDataURL(file);
+    };
+
+    // status & coords settings stored in localStorage
+    const defaultCoords = {
+      empresa:{x:100,y:625,size:14}, direccion:{x:470,y:625,size:14}, contacto:{x:100,y:595,size:14}, fecha:{x:470,y:595,size:14},
+      marca:{x:100,y:513,size:14}, modelo:{x:300,y:513,size:14}, serie:{x:450,y:513,size:14},
+      contadorBN:{x:120,y:490,size:14}, contadorColor:{x:120,y:450,size:14}, servicio:{x:300,y:436,size:14},
+      falla:{x:150,y:436,size:14,width:420}, funcion:{x:80,y:350,size:14,width:420},
+      repuestos:{x:90,y:227,size:14,width:420}, observacion:{x:90,y:107,size:14,width:420},
+      firmaCliente:{x:50,y:15,w:170,h:70}, firmaIngeniero:{x:220,y:15,w:170,h:70}
+    };
+    const [coords, setCoords] = useState(()=>{
+      try{ const raw = localStorage.getItem('r_coords'); return raw ? JSON.parse(raw) : defaultCoords; }catch(e){ return defaultCoords; }
+    });
+
+    const [msg, setMsg] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    // history saved reports in localStorage
+    const [history, setHistory] = useState(()=>{
+      try{ const raw = localStorage.getItem('r_history'); return raw ? JSON.parse(raw) : []; }catch(e){ return []; }
+    });
+
+    // set today's date default
+    useEffect(()=>{
+      if(!form.fecha){
+        const d=new Date(); const tz=d.getTimezoneOffset(); const local=new Date(d.getTime()-tz*60000).toISOString().slice(0,10);
+        setForm(f=>({...f, fecha: local}));
+      }
+    },[]);
+
+    // handle input change
+    const onChange = (e)=>{ const {id,value}=e.target; setForm(f=>({...f,[id]:value})); };
+
+    // load template PDF
+    const onLoadTemplate = async (file)=>{
+      if(!file) return;
+      setMsg('Cargando plantilla...');
+      const arr = await file.arrayBuffer();
+      setTemplateBytes(arr);
+      setTemplName(file.name||'plantilla.pdf');
+      setMsg('Plantilla cargada: ' + file.name);
+    };
+
+    // helper to draw wrapped text
+    function drawWrappedText(page, text, x, y, maxWidth, fontObj, size, color = rgb(0,0,0)) {
+      const words = String(text||'').split(/\s+/);
+      let line = '';
+      let cursorY = y;
+      for (let i=0;i<words.length;i++){
+        const testLine = line ? (line + ' ' + words[i]) : words[i];
+        const testWidth = fontObj.widthOfTextAtSize(testLine, size);
+        if (testWidth > maxWidth && line) {
+          page.drawText(line, { x, y: cursorY, size, font: fontObj, color });
+          line = words[i];
+          cursorY -= size + 2;
+        } else {
+          line = testLine;
+        }
+      }
+      if (line) page.drawText(line, { x, y: cursorY, size, font: fontObj, color });
+    }
+
+    // generate pdf
+    const generatePDF = async () => {
+      if(!templateBytes){ alert('Carga primero la plantilla PDF.'); return; }
+      setMsg('Generando PDF...');
+      try{
+        const pdfDoc = await PDFDocument.load(templateBytes);
+        const page = pdfDoc.getPages()[0];
+        const { width, height } = page.getSize();
+        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        // write simple fields
+        const c = coords;
+        page.drawText(String(form.empresa||''), { x: c.empresa.x, y: c.empresa.y, size: c.empresa.size, font, color: rgb(0,0,0) });
+        page.drawText(String(form.direccion||''), { x: c.direccion.x, y: c.direccion.y, size: c.direccion.size, font, color: rgb(0,0,0) });
+        page.drawText(String(form.contacto||''), { x: c.contacto.x, y: c.contacto.y, size: c.contacto.size, font, color: rgb(0,0,0) });
+        page.drawText(String(form.fecha||''), { x: c.fecha.x, y: c.fecha.y, size: c.fecha.size, font, color: rgb(0,0,0) });
+
+        page.drawText(String(form.marca||''), { x: c.marca.x, y: c.marca.y, size: c.marca.size, font, color: rgb(0,0,0) });
+        page.drawText(String(form.modelo||''), { x: c.modelo.x, y: c.modelo.y, size: c.modelo.size, font, color: rgb(0,0,0) });
+        page.drawText(String(form.serie||''), { x: c.serie.x, y: c.serie.y, size: c.serie.size, font, color: rgb(0,0,0) });
+
+        page.drawText(String(form.contadorBN||''), { x: c.contadorBN.x, y: c.contadorBN.y, size: c.contadorBN.size, font, color: rgb(0,0,0) });
+        page.drawText(String(form.contadorColor||''), { x: c.contadorColor.x, y: c.contadorColor.y, size: c.contadorColor.size, font, color: rgb(0,0,0) });
+        page.drawText(String(form.servicio||''), { x: c.servicio.x, y: c.servicio.y, size: c.servicio.size, font, color: rgb(0,0,0) });
+
+        drawWrappedText(page, form.falla, c.falla.x, c.falla.y, c.falla.width, font, c.falla.size);
+        drawWrappedText(page, form.funcion, c.funcion.x, c.funcion.y, c.funcion.width, font, c.funcion.size);
+        drawWrappedText(page, form.repuestos, c.repuestos.x, c.repuestos.y, c.repuestos.width, font, c.repuestos.size);
+        drawWrappedText(page, form.observacion, c.observacion.x, c.observacion.y, c.observacion.width, font, c.observacion.size);
+
+        // embed signatures if present
+        if(firmaCli){
+          const bytes = await (await fetch(firmaCli)).arrayBuffer();
+          const img = await pdfDoc.embedPng(bytes);
+          const scale = Math.min(c.firmaCliente.w / img.width, c.firmaCliente.h / img.height);
+          page.drawImage(img, { x:c.firmaCliente.x, y:c.firmaCliente.y, width: img.width*scale, height: img.height*scale });
+        }
+        if(firmaIng){
+          const bytes = await (await fetch(firmaIng)).arrayBuffer();
+          const img = await pdfDoc.embedPng(bytes);
+          const scale = Math.min(c.firmaIngeniero.w / img.width, c.firmaIngeniero.h / img.height);
+          page.drawImage(img, { x:c.firmaIngeniero.x, y:c.firmaIngeniero.y, width: img.width*scale, height: img.height*scale });
+        }
+
+        // Si hay imagen cargada, la insertamos en una nueva página
+        if(extraImg){
+          const imgBytes = await fetch(extraImg).then(res => res.arrayBuffer());
+          let img;
+          if(extraImg.startsWith("data:image/png")) {
+            img = await pdfDoc.embedPng(imgBytes);
+          } else {
+            img = await pdfDoc.embedJpg(imgBytes);
+          }
+
+          // Escalamos la imagen para que encaje en tamaño A4
+          const page2 = pdfDoc.addPage([612, 792]); // A4 en puntos
+          const imgWidth = 595;
+          const imgHeight = (img.height / img.width) * 612;
+          page2.drawImage(img, {
+            x: 0,
+            y: 792 - imgHeight,
+            width: imgWidth,
+            height: imgHeight
+          });
+        }
+
+
+        const pdfBytes = await pdfDoc.save();
+        const blob = new Blob([pdfBytes], { type:'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `reporte-${form.empresa?.replace(/\s+/g,'_')||'reporte'}-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setMsg('PDF generado y descargado ✔️');
+
+        // save to history
+        const item = { id: Date.now(), date: new Date().toISOString(), form, firmaCli, firmaIng };
+        const newHist = [item, ...history].slice(0,50); // keep up to 50
+        setHistory(newHist);
+        localStorage.setItem('r_history', JSON.stringify(newHist));
+      }catch(err){
+        console.error(err); alert('Error generando PDF: '+err.message);
+        setMsg('Error al generar PDF');
+      }
+    };
+
+    // save coords to localStorage
+    const saveCoords = ()=>{ localStorage.setItem('r_coords', JSON.stringify(coords)); setMsg('Posiciones guardadas'); };
+
+    // load a historic report (preview / re-download)
+    const loadHistoric = (item)=>{
+      setForm(item.form || {});
+      setFirmaCli(item.firmaCli || null);
+      setFirmaIng(item.firmaIng || null);
+      setMsg('Reporte cargado desde historial (puedes regenerar o editar).');
+    };
+
+    const deleteHistoric = (id)=>{
+      const n = history.filter(h=>h.id!==id);
+      setHistory(n); localStorage.setItem('r_history', JSON.stringify(n));
+    };
+
+    // export single historic as PDF again
+    const exportHistoric = async (item)=>{
+      // set form and signatures to current then call generatePDF
+      setForm(item.form || {});
+      setFirmaCli(item.firmaCli || null);
+      setFirmaIng(item.firmaIng || null);
+      setTimeout(()=> generatePDF(), 300); // slight delay to ensure state set
+    };
+
+    return (
+      <div className="max-w-4xl mx-auto p-4">
+        <header className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-extrabold">Generador de Reporte Técnico (Offline)</h1>
+            <p className="text-sm text-slate-600">Carga tu plantilla, completa datos, recoge firmas y descarga el PDF.</p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-slate-500">⚠️ Offline — Android recomendado</div>
+            <div className="text-xs text-slate-500">Plantilla: {templName || 'No cargada'}</div>
+          </div>
+        </header>
+
+        <section className="bg-white rounded-xl p-4 shadow mb-4">
+          <label className="block text-sm font-semibold mb-1">1) Cargar plantilla PDF</label>
+          <input type="file" accept="application/pdf" onChange={(e)=>onLoadTemplate(e.target.files?.[0])} />
+          <p className="text-xs text-slate-400 mt-2">La plantilla se usará como fondo y se insertarán datos sobre ella.</p>
+        </section>
+        <section className="bg-white rounded-xl p-4 shadow mb-4">
+          <label className="block text-sm font-semibold mb-1">2) Cargar imagen adicional (opcional)</label>
+          <input type="file" accept="image/*" onChange={(e)=>onLoadExtraImg(e.target.files?.[0])} />
+          {extraImg && <p className="text-xs text-green-600 mt-1">✔ Imagen lista para añadir al PDF</p>}
+        </section>
+
+        <form className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 bg-white p-4 rounded-xl shadow" onSubmit={(e)=>{ e.preventDefault(); }}>
+          <div>
+            <h3 className="font-bold mb-2">Datos de la empresa</h3>
+            <label className="text-sm">Empresa</label>
+            <input id="empresa" value={form.empresa} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" />
+            <label className="text-sm">Dirección</label>
+            <input id="direccion" value={form.direccion} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" />
+            <label className="text-sm">Contacto</label>
+            <input id="contacto" value={form.contacto} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" />
+            <label className="text-sm">Fecha</label>
+            <input id="fecha" type="date" value={form.fecha} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" />
+          </div>
+
+          <div>
+            <h3 className="font-bold mb-2">Datos del equipo</h3>
+            <label className="text-sm">Marca</label>
+            <input id="marca" value={form.marca} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" />
+            <label className="text-sm">Modelo</label>
+            <input id="modelo" value={form.modelo} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" />
+            <label className="text-sm">Serie</label>
+            <input id="serie" value={form.serie} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" />
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="text-sm">Contador B/N</label><input id="contadorBN" value={form.contadorBN} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" /></div>
+              <div><label className="text-sm">Contador Color</label><input id="contadorColor" value={form.contadorColor} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" /></div>
+            </div>
+            <label className="text-sm">Servicio solicitado</label>
+            <input id="servicio" value={form.servicio} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" />
+            <label className="text-sm">Falla reportada</label>
+            <textarea id="falla" value={form.falla} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" rows="3" />
+          </div>
+
+          <div className="lg:col-span-2">
+            <label className="text-sm font-bold">Función desempeñada</label>
+            <textarea id="funcion" value={form.funcion} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" rows="3" />
+            <label className="text-sm font-bold">Repuestos para sustitución</label>
+            <textarea id="repuestos" value={form.repuestos} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" rows="2" />
+            <label className="text-sm">Observación</label>
+            <textarea id="observacion" value={form.observacion} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" rows="2" />
+          </div>
+
+          <div className="lg:col-span-2 flex gap-3 items-center">
+            <div>
+              <button type="button" onClick={()=>setOpenCli(true)} className="px-3 py-2 rounded bg-rose-600 text-white">Firmar (Cliente)</button>
+              <div className="text-xs text-slate-500 mt-1">{firmaCli ? 'Firma cliente guardada' : 'Sin firma cliente'}</div>
+            </div>
+            <div>
+              <button type="button" onClick={()=>setOpenIng(true)} className="px-3 py-2 rounded bg-amber-600 text-white">Firmar (Ingeniero)</button>
+              <div className="text-xs text-slate-500 mt-1">{firmaIng ? 'Firma ingeniero guardada' : 'Sin firma ingeniero'}</div>
+            </div>
+            <div className="ml-auto flex gap-2">
+              <button type="button" onClick={generatePDF} className="px-4 py-2 rounded bg-blue-700 text-white">Generar PDF y Descargar</button>
+              <button type="button" onClick={()=>{ // save draft locally
+                const item = { id: Date.now(), date: new Date().toISOString(), form, firmaCli, firmaIng };
+                const newHist = [item,...history].slice(0,50);
+                setHistory(newHist); localStorage.setItem('r_history', JSON.stringify(newHist));
+                setMsg('Borrador guardado en historial');
+              }} className="px-4 py-2 rounded bg-slate-200">Guardar borrador</button>
+            </div>
+          </div>
+        </form>
+        <section className="bg-white rounded-xl p-4 shadow mb-4">
+          <h3 className="font-semibold mb-2">Historial (local)</h3>
+          <p className="text-xs text-slate-500">Aquí se guardan los últimos reportes (máx 50). Puedes cargar, eliminar o volver a exportar.</p>
+          <div className="mt-2 space-y-2 max-h-44 overflow-auto">
+            {history.length===0 ? <div className="text-sm text-slate-500">Sin historial</div> : history.map(item=>(
+              <div key={item.id} className="flex items-center justify-between p-2 border rounded">
+                <div>
+                  <div className="font-medium text-sm">{item.form.empresa || 'Sin empresa'}</div>
+                  <div className="text-xs text-slate-500">{new Date(item.date).toLocaleString()}</div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={()=>loadHistoric(item)} className="px-2 py-1 rounded bg-slate-200 text-sm">Cargar</button>
+                  <button onClick={()=>exportHistoric(item)} className="px-2 py-1 rounded bg-blue-600 text-white text-sm">Exportar</button>
+                  <button onClick={()=>deleteHistoric(item.id)} className="px-2 py-1 rounded bg-red-500 text-white text-sm">Eliminar</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="text-sm text-slate-600 mb-6">{msg}</div>
+
+        <SignatureModal open={openCli} title="Firma - Cliente" onSave={(d)=>{ setFirmaCli(d); setMsg('Firma cliente guardada'); }} onClose={()=>setOpenCli(false)} />
+        <SignatureModal open={openIng} title="Firma - Ingeniero" onSave={(d)=>{ setFirmaIng(d); setMsg('Firma ingeniero guardada'); }} onClose={()=>setOpenIng(false)} />
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
