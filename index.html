@@ -190,11 +190,6 @@
     const [msg, setMsg] = useState('');
     const [saving, setSaving] = useState(false);
 
-    // history saved reports in localStorage
-    const [history, setHistory] = useState(()=>{
-      try{ const raw = localStorage.getItem('r_history'); return raw ? JSON.parse(raw) : []; }catch(e){ return []; }
-    });
-
     // set today's date default
     useEffect(()=>{
       if(!form.fecha){
@@ -312,12 +307,7 @@
         a.remove();
         URL.revokeObjectURL(url);
         setMsg('PDF generado y descargado ✔️');
-
-        // save to history
-        const item = { id: Date.now(), date: new Date().toISOString(), form, firmaCli, firmaIng };
-        const newHist = [item, ...history].slice(0,50); // keep up to 50
-        setHistory(newHist);
-        localStorage.setItem('r_history', JSON.stringify(newHist));
+        
       }catch(err){
         console.error(err); alert('Error generando PDF: '+err.message);
         setMsg('Error al generar PDF');
@@ -326,28 +316,6 @@
 
     // save coords to localStorage
     const saveCoords = ()=>{ localStorage.setItem('r_coords', JSON.stringify(coords)); setMsg('Posiciones guardadas'); };
-
-    // load a historic report (preview / re-download)
-    const loadHistoric = (item)=>{
-      setForm(item.form || {});
-      setFirmaCli(item.firmaCli || null);
-      setFirmaIng(item.firmaIng || null);
-      setMsg('Reporte cargado desde historial (puedes regenerar o editar).');
-    };
-
-    const deleteHistoric = (id)=>{
-      const n = history.filter(h=>h.id!==id);
-      setHistory(n); localStorage.setItem('r_history', JSON.stringify(n));
-    };
-
-    // export single historic as PDF again
-    const exportHistoric = async (item)=>{
-      // set form and signatures to current then call generatePDF
-      setForm(item.form || {});
-      setFirmaCli(item.firmaCli || null);
-      setFirmaIng(item.firmaIng || null);
-      setTimeout(()=> generatePDF(), 300); // slight delay to ensure state set
-    };
 
     return (
       <div className="max-w-4xl mx-auto p-4">
@@ -361,14 +329,7 @@
             <div className="text-xs text-slate-500">Plantilla: {templName || 'No cargada'}</div>
           </div>
         </header>
-
-        <section className="bg-white rounded-xl p-4 shadow mb-4">
-          <label className="block text-sm font-semibold mb-1">1) Cargar plantilla PDF</label>
-          
-          // <input type="file" accept="application/pdf" onChange={(e)=>onLoadTemplate(e.target.files?.[0])} />
-          
-          <p className="text-xs text-slate-400 mt-2">La plantilla se usará como fondo y se insertarán datos sobre ella.</p>
-        </section>
+        
         <section className="bg-white rounded-xl p-4 shadow mb-4">
           <label className="block text-sm font-semibold mb-1">2) Cargar imagen adicional (opcional)</label>
           <input type="file" accept="image/*" onChange={(e)=>onLoadExtraImg(e.target.files?.[0])} />
@@ -426,35 +387,9 @@
             </div>
             <div className="ml-auto flex gap-2">
               <button type="button" onClick={generatePDF} className="px-4 py-2 rounded bg-blue-700 text-white">Generar PDF y Descargar</button>
-              <button type="button" onClick={()=>{ // save draft locally
-                const item = { id: Date.now(), date: new Date().toISOString(), form, firmaCli, firmaIng };
-                const newHist = [item,...history].slice(0,50);
-                setHistory(newHist); localStorage.setItem('r_history', JSON.stringify(newHist));
-                setMsg('Borrador guardado en historial');
-              }} className="px-4 py-2 rounded bg-slate-200">Guardar borrador</button>
             </div>
           </div>
         </form>
-        <section className="bg-white rounded-xl p-4 shadow mb-4">
-          <h3 className="font-semibold mb-2">Historial (local)</h3>
-          <p className="text-xs text-slate-500">Aquí se guardan los últimos reportes (máx 50). Puedes cargar, eliminar o volver a exportar.</p>
-          <div className="mt-2 space-y-2 max-h-44 overflow-auto">
-            {history.length===0 ? <div className="text-sm text-slate-500">Sin historial</div> : history.map(item=>(
-              <div key={item.id} className="flex items-center justify-between p-2 border rounded">
-                <div>
-                  <div className="font-medium text-sm">{item.form.empresa || 'Sin empresa'}</div>
-                  <div className="text-xs text-slate-500">{new Date(item.date).toLocaleString()}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={()=>loadHistoric(item)} className="px-2 py-1 rounded bg-slate-200 text-sm">Cargar</button>
-                  <button onClick={()=>exportHistoric(item)} className="px-2 py-1 rounded bg-blue-600 text-white text-sm">Exportar</button>
-                  <button onClick={()=>deleteHistoric(item.id)} className="px-2 py-1 rounded bg-red-500 text-white text-sm">Eliminar</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
         <div className="text-sm text-slate-600 mb-6">{msg}</div>
 
         <SignatureModal open={openCli} title="Firma - Cliente" onSave={(d)=>{ setFirmaCli(d); setMsg('Firma cliente guardada'); }} onClose={()=>setOpenCli(false)} />
@@ -467,5 +402,6 @@
   </script>
 </body>
 </html>
+
 
 
