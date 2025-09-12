@@ -33,11 +33,11 @@
     useEffect(()=>{
         if(!open) return;
         const canvas = canvasRef.current;
-        const w = 800, h = 300; // tamaño base en px
+        const w = 1000, h = 500; // tamaño base en px
         canvas.width = w;
         canvas.height = h;
         canvas.style.width = '100%';
-        canvas.style.height = (h / (w / canvas.offsetWidth || 600)) + 'px';
+        //canvas.style.height = (h / (w / canvas.offsetWidth || 600)) + 'px';
 
         const ctx = canvas.getContext('2d');
         ctx.lineWidth = strokeWidth;
@@ -110,7 +110,7 @@
             <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-4" onClick={(e)=>e.stopPropagation()}>
                 <h3 className="text-lg font-semibold mb-2">{title||'Dibuje su firma'}</h3>
                 <div className="border rounded overflow-hidden">
-                    <canvas ref={canvasRef} className="w-full h-40 touch-none"
+                    <canvas ref={canvasRef} className="w-full h-[500px] touch-none"
                         onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
                         onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
             </div>
@@ -402,6 +402,7 @@
   </script>
 </body>
 </html>
+
 
 
 
