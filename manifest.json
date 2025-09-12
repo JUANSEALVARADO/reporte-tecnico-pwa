@@ -1,7 +1,7 @@
 {
   "name": "Reporte Técnico",
   "short_name": "Reporte",
-  "start_url": "index.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f1f5f9",
   "theme_color": "#1e3a8a",
@@ -18,3 +18,4 @@
     }
   ]
 }
+
