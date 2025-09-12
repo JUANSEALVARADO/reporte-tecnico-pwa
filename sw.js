@@ -4,7 +4,7 @@ const urlsToCache = [
   "manifest.json",
   "icon-192.png",
   "icon-512.png",
-  "formato.pdf"
+  "plantilla.pdf"
 ];
 
 // Instalar y guardar en caché
@@ -22,4 +22,5 @@ self.addEventListener("fetch", event => {
     })
   );
 });
+
 
