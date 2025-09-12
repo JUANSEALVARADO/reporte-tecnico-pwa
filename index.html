@@ -283,7 +283,7 @@
             img = await pdfDoc.embedJpg(imgBytes);
           }
 
-          // Escalamos la imagen para que encaje en tamaño A4
+          // Escalamos la imagen para que encaje en tamaño Letter
           const page2 = pdfDoc.addPage([612, 792]); // A4 en puntos
           const imgWidth = 595;
           const imgHeight = (img.height / img.width) * 612;
@@ -329,7 +329,7 @@
         </header>
         
         <section className="bg-white rounded-xl p-4 shadow mb-4">
-          <label className="block text-sm font-semibold mb-1">2) Cargar imagen adicional (opcional)</label>
+          <label className="block text-sm font-semibold mb-1">Cargar contador u otros archivos anexos.</label>
           <input type="file" accept="image/*" onChange={(e)=>onLoadExtraImg(e.target.files?.[0])} />
           {extraImg && <p className="text-xs text-green-600 mt-1">✔ Imagen lista para añadir al PDF</p>}
         </section>
