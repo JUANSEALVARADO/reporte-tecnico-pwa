@@ -110,7 +110,7 @@
             <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-4" onClick={(e)=>e.stopPropagation()}>
                 <h3 className="text-lg font-semibold mb-2">{title||'Dibuje su firma'}</h3>
                 <div className="border rounded overflow-hidden">
-                    <canvas ref={canvasRef} className="w-full h-[500px] touch-none"
+                    <canvas ref={canvasRef} className="w-full h-[90vh] touch-none"
                         onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
                         onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
             </div>
@@ -402,6 +402,7 @@
   </script>
 </body>
 </html>
+
 
 
 
