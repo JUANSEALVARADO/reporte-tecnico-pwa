@@ -137,6 +137,25 @@
     const [templateBytes, setTemplateBytes] = useState(null);
     const [templName, setTemplName] = useState('');
 
+    // Cargar automáticamente la plantilla desde la carpeta pública al iniciar la app
+    useEffect(() => {
+      async function loadTemplate() {
+        try {
+          const res = await fetch('formato.pdf');   // <-- nombre del archivo en la raíz
+          if (!res.ok) throw new Error('plantilla no encontrada (404)');
+          const arr = await res.arrayBuffer();
+          setTemplateBytes(arr);
+          setTemplName('formato.pdf');
+          setMsg('Plantilla precargada ✔️');
+        } catch (err) {
+          console.error('Error cargando plantilla automática:', err);
+          setMsg('No se pudo precargar la plantilla: ' + (err.message || err));
+        }
+      }
+      loadTemplate();
+    }, []); // corre una sola vez al montar App
+
+
     // Signatures
     const [firmaCli, setFirmaCli] = useState(null);
     const [firmaIng, setFirmaIng] = useState(null);
@@ -345,7 +364,9 @@
 
         <section className="bg-white rounded-xl p-4 shadow mb-4">
           <label className="block text-sm font-semibold mb-1">1) Cargar plantilla PDF</label>
-          <input type="file" accept="application/pdf" onChange={(e)=>onLoadTemplate(e.target.files?.[0])} />
+          
+          // <input type="file" accept="application/pdf" onChange={(e)=>onLoadTemplate(e.target.files?.[0])} />
+          
           <p className="text-xs text-slate-400 mt-2">La plantilla se usará como fondo y se insertarán datos sobre ella.</p>
         </section>
         <section className="bg-white rounded-xl p-4 shadow mb-4">
@@ -446,4 +467,5 @@
   </script>
 </body>
 </html>
+
 
