@@ -141,11 +141,11 @@
     useEffect(() => {
       async function loadTemplate() {
         try {
-          const res = await fetch('formato.pdf');   // <-- nombre del archivo en la raíz
+          const res = await fetch('plantilla.pdf');   // <-- nombre del archivo en la raíz
           if (!res.ok) throw new Error('plantilla no encontrada (404)');
           const arr = await res.arrayBuffer();
           setTemplateBytes(arr);
-          setTemplName('formato.pdf');
+          setTemplName('plantilla.pdf');
           setMsg('Plantilla precargada ✔️');
         } catch (err) {
           console.error('Error cargando plantilla automática:', err);
@@ -402,6 +402,7 @@
   </script>
 </body>
 </html>
+
 
 
 
