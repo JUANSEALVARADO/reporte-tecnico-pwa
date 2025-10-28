@@ -357,6 +357,40 @@
       setMsg("Elemento eliminado ❌");
     };
 
+    // Guardar reporte actual en historial
+    const saveToHistory = () => {
+      if (!form.empresa || !form.contacto || !form.marca) {
+        alert("⚠️ Completa al menos: Empresa, Contacto y Modelo del equipo");
+        return;
+      }
+
+      const historial = JSON.parse(localStorage.getItem("r_historial") || "[]");
+
+      const nuevoRegistro = {
+        id: Date.now(),
+        fecha: form.fecha,
+        empresa: form.empresa,
+        contacto: form.contacto,
+        marca: form.marca,
+        modelo: form.modelo,
+        serie: form.serie,
+        servicio: form.servicio,
+        falla: form.falla,
+        funcion: form.funcion,
+        repuestos: form.repuestos,
+        observacion: form.observacion,
+        firmaCli,
+        firmaIng,
+        extraImg
+      };
+
+      historial.unshift(nuevoRegistro);
+      localStorage.setItem("r_historial", JSON.stringify(historial));
+
+      setMsg("✅ Guardado en historial correctamente ✅");
+    };
+
+
     return (
       <div className="max-w-4xl mx-auto p-4">
         <header className="flex items-center justify-between mb-4">
@@ -424,8 +458,19 @@
               <div className="text-xs text-slate-500 mt-1">{firmaIng ? 'Firma ingeniero guardada' : 'Sin firma ingeniero'}</div>
             </div>
             <div className="ml-auto flex gap-2">
-              <button type="button" onClick={generatePDF} className="px-4 py-2 rounded bg-blue-700 text-white">Generar PDF y Descargar</button>
+              <button type="button"
+                onClick={saveToHistory}
+                className="px-4 py-2 rounded bg-green-600 text-white">
+                Guardar
+              </button>
+
+              <button type="button"
+                onClick={generatePDF}
+                className="px-4 py-2 rounded bg-blue-700 text-white">
+                Generar PDF y Descargar
+              </button>
             </div>
+
           </div>
         </form>
         <section className="bg-white p-4 rounded-xl shadow mb-6">
@@ -474,3 +519,12 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
