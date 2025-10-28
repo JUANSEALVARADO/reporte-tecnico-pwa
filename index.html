@@ -133,6 +133,15 @@
       funcion:'', repuestos:'', observacion:''
     });
 
+    // Historial
+    const [historial, setHistorial] = useState(() => {
+      try {
+        return JSON.parse(localStorage.getItem("r_historial") || "[]");
+      } catch {
+        return [];
+      }
+    });
+
     // Template bytes
     const [templateBytes, setTemplateBytes] = useState(null);
     const [templName, setTemplName] = useState('');
@@ -229,12 +238,28 @@
       }
       if (line) page.drawText(line, { x, y: cursorY, size, font: fontObj, color });
     }
+    const guardarHistorial = () => {
+      const nuevo = {
+        id: Date.now(),
+        form,
+        firmaCli,
+        firmaIng,
+        extraImg,
+        plantilla: templName,
+        fechaGuardado: new Date().toLocaleString()
+      };
+      const lista = [nuevo, ...historial];
+      setHistorial(lista);
+      localStorage.setItem("r_historial", JSON.stringify(lista));
+      setMsg("Guardado automáticamente en historial ✔");
+    };
 
     // generate pdf
     const generatePDF = async () => {
       if(!templateBytes){ alert('Carga primero la plantilla PDF.'); return; }
       setMsg('Generando PDF...');
       try{
+        guardarHistorial();
         const pdfDoc = await PDFDocument.load(templateBytes);
         const page = pdfDoc.getPages()[0];
         const { width, height } = page.getSize();
@@ -317,6 +342,21 @@
     // save coords to localStorage
     const saveCoords = ()=>{ localStorage.setItem('r_coords', JSON.stringify(coords)); setMsg('Posiciones guardadas'); };
 
+    const cargarHistorial = (item) => {
+      setForm(item.form);
+      setFirmaCli(item.firmaCli);
+      setFirmaIng(item.firmaIng);
+      setExtraImg(item.extraImg);
+      setMsg("Historial cargado ✅");
+    };
+
+    const eliminarHistorial = (id) => {
+      const lista = historial.filter(h => h.id !== id);
+      setHistorial(lista);
+      localStorage.setItem("r_historial", JSON.stringify(lista));
+      setMsg("Elemento eliminado ❌");
+    };
+
     return (
       <div className="max-w-4xl mx-auto p-4">
         <header className="flex items-center justify-between mb-4">
@@ -388,6 +428,40 @@
             </div>
           </div>
         </form>
+        <section className="bg-white p-4 rounded-xl shadow mb-6">
+      <h2 className="text-lg font-bold mb-2">📂 Historial de reportes</h2>
+
+      {historial.length === 0 ? (
+        <p className="text-sm text-slate-500">No hay reportes guardados aún.</p>
+      ) : (
+        <ul className="space-y-3">
+          {historial.map(item => (
+            <li key={item.id} className="p-3 border rounded flex flex-col md:flex-row md:items-center justify-between gap-2">
+              <div className="text-sm">
+                <span className="font-semibold">{item.form.empresa || "Sin empresa"}</span>
+                <br />
+                <span className="text-slate-500">{item.fechaGuardado}</span>
+              </div>
+              <div className="flex gap-2">
+                <button className="px-3 py-1 text-xs rounded bg-emerald-600 text-white"
+                  onClick={() => cargarHistorial(item)}>Cargar</button>
+                
+                <button className="px-3 py-1 text-xs rounded bg-slate-700 text-white"
+                  onClick={() => {
+                    const w = window.open();
+                    w.document.write(`<img src="${item.extraImg}" style="width:100%"/>`);
+                  }}
+                  disabled={!item.extraImg}>Ver Img</button>
+
+                <button className="px-3 py-1 text-xs rounded bg-red-600 text-white"
+                  onClick={() => eliminarHistorial(item.id)}>Eliminar</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+
         <div className="text-sm text-slate-600 mb-6">{msg}</div>
 
         <SignatureModal open={openCli} title="Firma - Cliente" onSave={(d)=>{ setFirmaCli(d); setMsg('Firma cliente guardada'); }} onClose={()=>setOpenCli(false)} />
@@ -400,12 +474,3 @@
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
