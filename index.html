@@ -171,17 +171,30 @@
     const [openCli, setOpenCli] = useState(false);
     const [openIng, setOpenIng] = useState(false);
 
-    const [extraImg, setExtraImg] = useState(null);
+    const [extraImgs, setExtraImgs] = useState([]);
 
-    const onLoadExtraImg = (file) => {
-      if(!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setExtraImg(e.target.result); // base64 de la imagen
-        setMsg("Imagen adicional cargada ✔️");
-      };
-      reader.readAsDataURL(file);
+    const onLoadExtraImg = (files) => {
+      if (!files || files.length === 0) return;
+
+      const readers = [];
+
+      for (const file of files) {
+        readers.push(
+          new Promise(res => {
+            const r = new FileReader();
+            r.onload = e => res(e.target.result);
+            r.readAsDataURL(file);
+          })
+        );
+      }
+
+      Promise.all(readers).then(list => {
+        setExtraImgs(prev => [...prev, ...list]);
+        setMsg(`Se cargaron ${list.length} imágenes ✔`);
+      });
     };
+
+
 
     // status & coords settings stored in localStorage
     const defaultCoords = {
@@ -244,7 +257,7 @@
         form,
         firmaCli,
         firmaIng,
-        extraImg,
+        extraImgs,
         plantilla: templName,
         fechaGuardado: new Date().toLocaleString()
       };
@@ -259,7 +272,6 @@
       if(!templateBytes){ alert('Carga primero la plantilla PDF.'); return; }
       setMsg('Generando PDF...');
       try{
-        guardarHistorial();
         const pdfDoc = await PDFDocument.load(templateBytes);
         const page = pdfDoc.getPages()[0];
         const { width, height } = page.getSize();
@@ -299,34 +311,41 @@
         }
 
         // Si hay imagen cargada, la insertamos en una nueva página
-        if(extraImg){
-          const imgBytes = await fetch(extraImg).then(res => res.arrayBuffer());
-          let img;
-          if(extraImg.startsWith("data:image/png")) {
-            img = await pdfDoc.embedPng(imgBytes);
-          } else {
-            img = await pdfDoc.embedJpg(imgBytes);
-          }
+        for (const imgBase64 of extraImgs) {
+          const imgBytes = await fetch(imgBase64).then(res => res.arrayBuffer());
 
-          // Escalamos la imagen para que encaje en tamaño Letter
-          const page2 = pdfDoc.addPage([612, 792]); // A4 en puntos
+          let img;
+          if (imgBase64.startsWith("data:image/png"))
+            img = await pdfDoc.embedPng(imgBytes);
+          else 
+            img = await pdfDoc.embedJpg(imgBytes);
+
+          const page = pdfDoc.addPage([612, 792]); // Tamaño carta
+
           const imgWidth = 595;
           const imgHeight = (img.height / img.width) * 612;
-          page2.drawImage(img, {
+
+          page.drawImage(img, {
             x: 0,
             y: 792 - imgHeight,
             width: imgWidth,
             height: imgHeight
           });
         }
-
-
         const pdfBytes = await pdfDoc.save();
         const blob = new Blob([pdfBytes], { type:'application/pdf' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `reporte-${form.empresa?.replace(/\s+/g,'_')||'reporte'}-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`;
+        const fecha = form.fecha || new Date().toISOString().slice(0,10);
+      
+        a.download =
+          `reporte ${form.empresa || 'empresa'} ` +
+          `${form.marca || 'marca'} ` +
+          `${form.modelo || 'modelo'} ` +
+          `${form.serie || 'serie'} ` +
+          `${fecha}.pdf`;
+
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -346,7 +365,7 @@
       setForm(item.form);
       setFirmaCli(item.firmaCli);
       setFirmaIng(item.firmaIng);
-      setExtraImg(item.extraImg);
+      setExtraImgs(item.extraImgs);
       setMsg("Historial cargado ✅");
     };
 
@@ -370,8 +389,8 @@
 
         <section className="bg-white rounded-xl p-4 shadow mb-4">
           <label className="block text-sm font-semibold mb-1">Cargar contador u otros archivos anexos.</label>
-          <input type="file" accept="image/*" onChange={(e)=>onLoadExtraImg(e.target.files?.[0])} />
-          {extraImg && <p className="text-xs text-green-600 mt-1">✔ Imagen lista para añadir al PDF</p>}
+          <input type="file" accept="image/*" multiple onChange={(e)=>onLoadExtraImg(e.target.files)} />
+          {extraImgs && <p className="text-xs text-green-600 mt-1">✔ Imagen lista para añadir al PDF</p>}
         </section>
 
         <form className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 bg-white p-4 rounded-xl shadow" onSubmit={(e)=>{ e.preventDefault(); }}>
@@ -402,7 +421,7 @@
             <label className="text-sm">Servicio solicitado</label>
             <input id="servicio" value={form.servicio} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" />
             <label className="text-sm">Falla reportada</label>
-            <textarea id="falla" value={form.falla} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" rows="3" />
+            <input id="falla" value={form.falla} onChange={onChange} className="w-full rounded border px-3 py-2 mb-2" rows="3" />
           </div>
 
           <div className="lg:col-span-2">
@@ -424,8 +443,21 @@
               <div className="text-xs text-slate-500 mt-1">{firmaIng ? 'Firma ingeniero guardada' : 'Sin firma ingeniero'}</div>
             </div>
             <div className="ml-auto flex gap-2">
-              <button type="button" onClick={generatePDF} className="px-4 py-2 rounded bg-blue-700 text-white">Generar PDF y Descargar</button>
+
+              <button type="button"
+                onClick={guardarHistorial}
+                className="px-4 py-2 rounded bg-green-600 text-white">
+                Guardar
+              </button>
+
+              <button type="button"
+                onClick={generatePDF}
+                className="px-4 py-2 rounded bg-blue-700 text-white">
+                Generar PDF
+              </button>
+
             </div>
+
           </div>
         </form>
         <section className="bg-white p-4 rounded-xl shadow mb-6">
@@ -449,9 +481,9 @@
                 <button className="px-3 py-1 text-xs rounded bg-slate-700 text-white"
                   onClick={() => {
                     const w = window.open();
-                    w.document.write(`<img src="${item.extraImg}" style="width:100%"/>`);
+                    w.document.write(`<img src="${item.extraImgs}" style="width:100%"/>`);
                   }}
-                  disabled={!item.extraImg}>Ver Img</button>
+                  disabled={!item.extraImgs}>Ver Img</button>
 
                 <button className="px-3 py-1 text-xs rounded bg-red-600 text-white"
                   onClick={() => eliminarHistorial(item.id)}>Eliminar</button>
